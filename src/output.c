@@ -27,6 +27,10 @@
     work -- it's just that the first rotated file will contain several
     periods of data.
 */
+
+/* Needed for Linux to make offsets 64 bits */
+#define _FILE_OFFSET_BITS 64
+
 #include "output.h"
 #include "masscan.h"
 #include "masscan-status.h"
@@ -37,11 +41,25 @@
 #include "main-globals.h"
 #include "pixie-file.h"
 #include "pixie-sockets.h"
+#include "util-malloc.h"
 
 #include <limits.h>
 #include <ctype.h>
 #include <string.h>
 
+
+/*****************************************************************************
+ *****************************************************************************/
+static int64_t ftell_x(FILE *fp)
+{
+#if defined(WIN32) && defined(__GNUC__)
+    return ftello64(fp);
+#elif defined(WIN32) && defined(_MSC_VER)
+    return _ftelli64(fp);
+#else
+    return ftello(fp);
+#endif
+}
 
 /*****************************************************************************
  * The 'status' variable contains both the open/closed info as well as the
@@ -165,7 +183,7 @@ open_rotate(struct Output *out, const char *filename)
             sin.sin_addr.s_addr = htonl(out->redis.ip);
             sin.sin_port = htons((unsigned short)out->redis.port);
             sin.sin_family = AF_INET;
-            x = connect(fd, (struct sockaddr*)&sin, sizeof(sin));
+            x = connect((SOCKET)fd, (struct sockaddr*)&sin, sizeof(sin));
             if (x != 0) {
                 LOG(0, "redis: connect() failed\n");
                 perror("connect");
@@ -190,7 +208,7 @@ open_rotate(struct Output *out, const char *filename)
             fprintf(stderr, "out: could not open file for %s\n",
                     is_append?"appending":"writing");
             perror(filename);
-            control_c_pressed = 1;
+            is_tx_done = 1;
             return NULL;
         }
     }
@@ -292,14 +310,12 @@ duplicate_string(const char *str)
         length = strlen(str);
 
     /* Allocate memory for the string */
-    result = (char*)malloc(length + 1);
-    if (result == 0) {
-        fprintf(stderr, "output: out of memory error\n");
-        exit(1);
-    }
+    result = MALLOC(length + 1);
+    
 
     /* Copy the string */
-    memcpy(result, str, length+1);
+    if (str)
+        memcpy(result, str, length+1);
     result[length] = '\0';
 
     return result;
@@ -336,11 +352,8 @@ indexed_filename(const char *filename, unsigned index)
         ext = len;
 
     /* allocate memory */
-    new_filename = (char*)malloc(new_length);
-    if (new_filename == NULL) {
-        fprintf(stderr, "output: out of memory\n");
-        exit(1);
-    }
+    new_filename = MALLOC(new_length);
+    
 
     /* format the new name */
     sprintf_s(new_filename, new_length, "%.*s.%02u%s",
@@ -364,10 +377,7 @@ output_create(const struct Masscan *masscan, unsigned thread_index)
     unsigned i;
 
     /* allocate/initialize memory */
-    out = (struct Output *)malloc(sizeof(*out));
-    if (out == NULL)
-        return NULL;
-    memset(out, 0, sizeof(*out));
+    out = CALLOC(1, sizeof(*out));
     out->masscan = masscan;
     out->when_scan_started = time(0);
     out->is_virgin_file = 1;
@@ -415,6 +425,9 @@ output_create(const struct Masscan *masscan, unsigned thread_index)
         break;
     case Output_JSON:
         out->funcs = &json_output;
+        break;
+    case Output_NDJSON:
+        out->funcs = &ndjson_output;
         break;
     case Output_Certs:
         out->funcs = &certs_output;
@@ -496,7 +509,7 @@ output_do_rotate(struct Output *out, int is_closing)
     int err;
 
     /* Don't do anything if there is no file */
-    if (out->fp == NULL)
+    if (out == NULL || out->fp == NULL)
         return NULL;
 
     /* Make sure that all output has been flushed to the file */
@@ -521,11 +534,7 @@ output_do_rotate(struct Output *out, int is_closing)
                             + strlen(filename)
                             + 1  /* - */
                             + 1; /* nul */
-    new_filename = (char*)malloc(new_filename_size);
-    if (new_filename == NULL) {
-        LOG(0, "rotate: out of memory error\n");
-        return out->fp;
-    }
+    new_filename = MALLOC(new_filename_size);
 
     /* Get the proper timestamp for the file */
     if (out->is_gmt) {
@@ -534,6 +543,7 @@ output_do_rotate(struct Output *out, int is_closing)
         err = localtime_s(&tm, &out->rotate.last);
     }
     if (err != 0) {
+        free(new_filename);
         perror("gmtime(): file rotation ended");
         return out->fp;
     }
@@ -544,20 +554,38 @@ output_do_rotate(struct Output *out, int is_closing)
      * happen. */
     err = 0;
 again:
-    sprintf_s(new_filename, new_filename_size,
-              "%s/%02u%02u%02u-%02u%02u%02u" "-%s",
-        dir,
-        tm.tm_year % 100,
-        tm.tm_mon+1,
-        tm.tm_mday,
-        tm.tm_hour,
-        tm.tm_min,
-        tm.tm_sec,
-        filename);
-    if (access(new_filename, 0) == 0) {
-        tm.tm_sec++;
-        if (err++ == 0)
-            goto again;
+    if (out->rotate.filesize) {
+        size_t x_off=0, x_len=0;
+        if (strrchr(filename, '.')) {
+            x_off = strrchr(filename, '.') - filename;
+            x_len = strlen(filename + x_off);
+        } else {
+            x_off = strlen(filename);
+            x_len = 0;
+        }
+        sprintf_s(new_filename, new_filename_size,
+                      "%s/%.*s-%05u%.*s",
+                dir,
+                (unsigned)x_off, filename,
+                out->rotate.filecount++,
+                (unsigned)x_len, filename + x_off
+                );
+    } else {
+        sprintf_s(new_filename, new_filename_size,
+                  "%s/%02u%02u%02u-%02u%02u%02u" "-%s",
+            dir,
+            tm.tm_year % 100,
+            tm.tm_mon+1,
+            tm.tm_mday,
+            tm.tm_hour,
+            tm.tm_min,
+            tm.tm_sec,
+            filename);
+        if (access(new_filename, 0) == 0) {
+            tm.tm_sec++;
+            if (err++ == 0)
+                goto again;
+        }
     }
     filename = out->filename;
 
@@ -610,18 +638,62 @@ again:
 /***************************************************************************
  ***************************************************************************/
 static int
-is_rotate_time(const struct Output *out, time_t now)
+is_rotate_time(const struct Output *out, time_t now, FILE *fp)
 {
     if (out->is_virgin_file)
         return 0;
     if (now >= out->rotate.next)
         return 1;
     if (out->rotate.filesize != 0 &&
-        out->rotate.bytes_written >= out->rotate.filesize)
+        ftell_x(fp) >= (int64_t)out->rotate.filesize)
         return 1;
     return 0;
 }
 
+/***************************************************************************
+ * Return the vendor/OUI string matchng the first three bytes of a
+ * MAC address.
+ * TODO: this should be read in from a file
+ ***************************************************************************/
+static const char *
+oui_from_mac(const unsigned char mac[6])
+{
+    unsigned oui = mac[0]<<16 | mac[1]<<8 | mac[2];
+    switch (oui) {
+    case 0x0001c0: return "Compulab";
+    case 0x000732: return "Aaeon";
+    case 0x000c29: return "VMware";
+    case 0x001075: return "Seagate";
+    case 0x001132: return "Synology";
+    case 0x022618: return "Asus";
+    case 0x0022b0: return "D-Link";
+    case 0x00236c: return "Apple";
+    case 0x0016CB: return "Apple";
+    case 0x001e06: return "Odroid";
+    case 0x001ff3: return "Apple";
+    case 0x002590: return "Supermicro";
+    case 0x08cc68: return "Cisco";
+    case 0x0C9D92: return "Asus";
+    case 0x244CE3: return "Amazon";
+    case 0x2c27d7: return "HP";
+    case 0x3497f6: return "Asus";
+    case 0x38f73d: return "Amazon";
+    case 0x404a03: return "Zyxel";
+    case 0x4C9EFF: return "Zyxel";
+    case 0x5855CA: return "Apple";
+    case 0x60a44c: return "Asus";
+    case 0x6c72e7: return "Apple";
+    case 0x9003b7: return "Parrot";
+    case 0x94dbc9: return "Azurewave";
+    case 0xacbc32: return "Apple";
+    case 0xb827eb: return "Raspberry Pi";
+    case 0xc05627: return "Belkin";
+    case 0xc0c1c0: return "Cisco-Linksys";
+    case 0xDCA4CA: return "Apple";
+    case 0xe4956e: return "[random]";
+    default: return "";
+    }
+}
 
 /***************************************************************************
  * Report simply "open" or "closed", with little additional information.
@@ -630,7 +702,8 @@ is_rotate_time(const struct Output *out, time_t now)
  ***************************************************************************/
 void
 output_report_status(struct Output *out, time_t timestamp, int status,
-        unsigned ip, unsigned ip_proto, unsigned port, unsigned reason, unsigned ttl)
+        unsigned ip, unsigned ip_proto, unsigned port, unsigned reason, unsigned ttl,
+        const unsigned char mac[6])
 {
     FILE *fp = out->fp;
     time_t now = time(0);
@@ -646,18 +719,34 @@ output_report_status(struct Output *out, time_t timestamp, int status,
 
     /* If in "--interactive" mode, then print the banner to the command
      * line screen */
-    if (out->is_interactive || out->format == 0) {
+    if (out->is_interactive || out->format == 0 || out->format == Output_Interactive) {
         unsigned count;
 
-        count = fprintf(stdout, "Discovered %s port %u/%s on %u.%u.%u.%u",
-                    status_string(status),
-                    port,
-                    name_from_ip_proto(ip_proto),
-                    (ip>>24)&0xFF,
-                    (ip>>16)&0xFF,
-                    (ip>> 8)&0xFF,
-                    (ip>> 0)&0xFF
-                    );
+        switch (ip_proto) {
+        case 0: /* ARP */
+            count = fprintf(stdout, "Discovered %s port %u/%s on %u.%u.%u.%u (%02x:%02x:%02x:%02x:%02x:%02x) %s",
+                        status_string(status),
+                        port,
+                        name_from_ip_proto(ip_proto),
+                        (ip>>24)&0xFF,
+                        (ip>>16)&0xFF,
+                        (ip>> 8)&0xFF,
+                        (ip>> 0)&0xFF,
+                        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5],
+                        oui_from_mac(mac)
+                        );
+            break;
+        default:
+            count = fprintf(stdout, "Discovered %s port %u/%s on %u.%u.%u.%u",
+                        status_string(status),
+                        port,
+                        name_from_ip_proto(ip_proto),
+                        (ip>>24)&0xFF,
+                        (ip>>16)&0xFF,
+                        (ip>> 8)&0xFF,
+                        (ip>> 0)&0xFF
+                        );
+        }
 
         /* Because this line may overwrite the "%done" status line, print
          * some spaces afterward to completely cover up the line */
@@ -680,7 +769,7 @@ output_report_status(struct Output *out, time_t timestamp, int status,
      * file, rather than in a separate thread right at the time interval.
      * Thus, if results are coming in slowly, the rotation won't happen
      * on precise boundaries */
-    if (is_rotate_time(out, now)) {
+    if (is_rotate_time(out, now, fp)) {
         fp = output_do_rotate(out, 0);
         if (fp == NULL)
             return;
@@ -740,7 +829,7 @@ output_report_status(struct Output *out, time_t timestamp, int status,
     }
 
     /*
-     * Now do the actual output, whether it be XML, binary, JSON, Redis,
+     * Now do the actual output, whether it be XML, binary, JSON, ndjson, Redis,
      * and so on.
      */
     out->funcs->status(out, fp, timestamp, status, ip, ip_proto, port, reason, ttl);
@@ -766,7 +855,7 @@ output_report_banner(struct Output *out, time_t now,
 
     /* If in "--interactive" mode, then print the banner to the command
      * line screen */
-    if (out->is_interactive || out->format == 0) {
+    if (out->is_interactive || out->format == 0 || out->format == Output_Interactive) {
         unsigned count;
         char banner_buffer[4096];
 
@@ -800,7 +889,7 @@ output_report_banner(struct Output *out, time_t now,
      * file, rather than in a separate thread right at the time interval.
      * Thus, if results are coming in slowly, the rotation won't happen
      * on precise boundaries */
-    if (is_rotate_time(out, now)) {
+    if (is_rotate_time(out, now, fp)) {
         fp = output_do_rotate(out, 0);
         if (fp == NULL)
             return;
@@ -815,7 +904,7 @@ output_report_banner(struct Output *out, time_t now,
     }
 
     /*
-     * Now do the actual output, whether it be XML, binary, JSON, Redis,
+     * Now do the actual output, whether it be XML, binary, JSON, ndjson, Redis,
      * and so on.
      */
     out->funcs->banner(out, fp, now, ip, ip_proto, port, proto, ttl, px, length);
@@ -834,8 +923,10 @@ output_destroy(struct Output *out)
 
     /* If rotating files, then do one last rotate of this file to the
      * destination directory */
-    if (out->rotate.period)
+    if (out->rotate.period || out->rotate.filesize) {
+        LOG(1, "doing finale rotate\n");
         output_do_rotate(out, 1);
+    }
 
     /* If not rotating files, then simply close this file. Remember
      * that some files will write closing information before closing

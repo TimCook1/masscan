@@ -10,10 +10,11 @@
     duplicates still leak through, but it'll be less of a problem.
 */
 #include "main-dedup.h"
+#include "util-malloc.h"
 #include <stdlib.h>
 #include <string.h>
 
-#define DEDUP_ENTRIES 4096
+#define DEDUP_ENTRIES 65536 /* more aggressive deduplication */
 
 struct DedupEntry
 {
@@ -34,10 +35,7 @@ dedup_create(void)
 {
     struct DedupTable *result;
 
-    result = (struct DedupTable *)malloc(sizeof(*result));
-    if (result == NULL)
-        exit(1);
-    memset(result, 0, sizeof(*result));
+    result = CALLOC(1, sizeof(*result));
 
     return result;
 }

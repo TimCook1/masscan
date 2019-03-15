@@ -8,14 +8,21 @@
 struct Range
 {
     unsigned begin;
-    unsigned end; /* inclusive */
+    unsigned end; /* inclusive, so [n..m] includes both 'n' and 'm' */
 };
 
+/**
+ * An array of ranges in sorted order
+ */
 struct RangeList
 {
     struct Range *list;
     unsigned count;
     unsigned max;
+    unsigned *picker;
+    unsigned *picker_hash;
+    unsigned picker_mask;
+    unsigned is_sorted:1;
 };
 
 /**
@@ -137,7 +144,8 @@ rangelist_count(const struct RangeList *targets);
  * @return
  *      an IP address or port corresponding to this index.
  */
-unsigned rangelist_pick(const struct RangeList *targets, uint64_t i);
+unsigned
+rangelist_pick(const struct RangeList *targets, uint64_t i);
 
 
 /**
@@ -161,7 +169,9 @@ unsigned rangelist_pick(const struct RangeList *targets, uint64_t i);
 const char *
 rangelist_parse_ports(  struct RangeList *ports,
                         const char *string,
-                        unsigned *is_error);
+                        unsigned *is_error,
+                        unsigned proto_offset
+                      );
 
 
 /**
@@ -170,35 +180,25 @@ rangelist_parse_ports(  struct RangeList *ports,
 void
 rangelist_remove_all(struct RangeList *list);
 
-
 /**
- * Creates an optimized enumerator for translating indexes into
- * IP addresses/ports. When doing an entire Internet scan, there
- * will be thousands of exclude ranges, meaning that translating
- * an index into an address/port can be slow. Instead of doing
- * a linear search, the 'pick2' does it with a faster binary
- * search.
- * FIXME: this is rather a kludge, I should clean it up, but in practice
- * it works really well.
- */
-unsigned *
-rangelist_pick2_create(struct RangeList *targets);
-
-/**
- * Frees the memory allocated by 'rangelist_pick2_create()'
+ * Merge two range lists
  */
 void
-rangelist_pick2_destroy(unsigned *picker);
+rangelist_merge(struct RangeList *list1, const struct RangeList *list2);
+
 
 /**
- * Enumerate the IP address or port number given an index variable.
- * We are choosing an IP/port from the targets list, but we are using
- * the 'picker' numbers to optimize the enumeration.
+ * Optimizes the target list, so that when we call "rangelist_pick()"
+ * from an index, it runs faster. It currently configures this for 
+ * a binary-search, though in the future some more efficient
+ * algorithm may be chosen.
  */
-unsigned
-rangelist_pick2(const struct RangeList *targets, 
-                uint64_t index,
-                const unsigned *picker);
+void
+rangelist_optimize(struct RangeList *targets);
+
+void
+rangelist_sort(struct RangeList *targets);
+
 
 /**
  * Does a regression test of this module

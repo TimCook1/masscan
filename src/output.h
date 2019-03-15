@@ -60,6 +60,12 @@ struct Output
      * the file header until we've actually go something to write
      */
     unsigned is_virgin_file:1;
+    
+    /**
+     * used by json output to test if the first record has been seen, in order
+     * to determine if it needs a , comma before the record
+     */
+    unsigned is_first_record_seen:1;
 
     struct {
         time_t next;
@@ -68,6 +74,7 @@ struct Output
         unsigned offset;
         uint64_t filesize;
         uint64_t bytes_written;
+        unsigned filecount; /* filesize rotates */
         char *directory;
     } rotate;
 
@@ -124,6 +131,7 @@ extern const struct OutputType text_output;
 extern const struct OutputType unicornscan_output;
 extern const struct OutputType xml_output;
 extern const struct OutputType json_output;
+extern const struct OutputType ndjson_output;
 extern const struct OutputType certs_output;
 extern const struct OutputType binary_output;
 extern const struct OutputType null_output;
@@ -148,7 +156,8 @@ output_create(const struct Masscan *masscan, unsigned thread_index);
 void output_destroy(struct Output *output);
 
 void output_report_status(struct Output *output, time_t timestamp,
-    int status, unsigned ip, unsigned ip_proto, unsigned port, unsigned reason, unsigned ttl);
+    int status, unsigned ip, unsigned ip_proto, unsigned port, unsigned reason, unsigned ttl,
+    const unsigned char mac[6]);
 
 
 typedef void (*OUTPUT_REPORT_BANNER)(

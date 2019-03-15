@@ -5,9 +5,9 @@
     This works on both Linux and windows.
 */
 #include "rawsock.h"
-#include "string_s.h"
-
 #include "ranges.h" /*for parsing IPv4 addresses */
+#include "string_s.h"
+#include "util-malloc.h"
 
 
 #if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__)
@@ -99,8 +99,8 @@ int
 rawsock_get_default_gateway(const char *ifname, unsigned *ipv4)
 {
     int fd;
-    int seq = time(0);
-    int err;
+    int seq = (int)time(0);
+    size_t err;
     struct rt_msghdr *rtm;
     size_t sizeof_buffer;
 
@@ -110,11 +110,8 @@ rawsock_get_default_gateway(const char *ifname, unsigned *ipv4)
      * structure followed by an array of "sockaddr" structures.
      */
     sizeof_buffer = sizeof(*rtm) + sizeof(struct sockaddr_in)*16;
-    rtm = (struct rt_msghdr *)malloc(sizeof_buffer);
-    if (rtm == NULL)
-        exit(1);
-
-
+    rtm = MALLOC(sizeof_buffer);
+    
     /*
      * Create a socket for querying the kernel
      */
@@ -138,9 +135,9 @@ rawsock_get_default_gateway(const char *ifname, unsigned *ipv4)
     rtm->rtm_addrs = RTA_DST | RTA_NETMASK | RTA_GATEWAY | RTA_IFP;
 
     err = write(fd, (char *)rtm, sizeof_buffer);
-    if (err < 0 || err != sizeof_buffer) {
+    if (err != sizeof_buffer) {
         perror("write(RTM_GET)");
-        printf("----%u %u\n", err, (unsigned)sizeof_buffer);
+        printf("----%u %u\n", (unsigned)err, (unsigned)sizeof_buffer);
         close(fd);
         free(rtm);
         return -1;

@@ -55,7 +55,19 @@
 
 const char *strerror_x(int x);
 
-#if defined(_MSC_VER) && (_MSC_VER == 1600)
+#if defined(_MSC_VER) && (_MSC_VER == 1900)
+/*Visual Studio 2015*/
+# include <stdio.h>
+# include <string.h>
+# define strcasecmp     _stricmp
+# define memcasecmp     _memicmp
+# ifndef PRIu64
+#  define PRIu64 "llu"
+#  define PRId64 "lld"
+#  define PRIx64 "llx"
+# endif
+
+#elif defined(_MSC_VER) && (_MSC_VER == 1600)
 /*Visual Studio 2010*/
 # include <stdio.h>
 # include <string.h>
@@ -77,17 +89,19 @@ const char *strerror_x(int x);
  typedef int errno_t;
 errno_t fopen_s(FILE **fp, const char *filename, const char *mode);
 
-#elif defined(__GNUC__) && (__GNUC__ == 4)
+#elif defined(__GNUC__) && (__GNUC__ >= 4)
 #include <inttypes.h>
 /* GCC 4 */
 # define sprintf_s      snprintf
 # define vsprintf_s     vsnprintf
  int memcasecmp(const void *lhs, const void *rhs, int length);
  typedef int errno_t;
+#if !defined(WIN32) /* mingw */
 errno_t fopen_s(FILE **fp, const char *filename, const char *mode);
 errno_t strcpy_s(char *dst, size_t sizeof_dst, const char *src);
 errno_t localtime_s(struct tm* _tm, const time_t *time);
 errno_t gmtime_s(struct tm* _tm, const time_t *time);
+#endif
 #undef strerror
 
 #else

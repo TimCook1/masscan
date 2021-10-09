@@ -1,5 +1,5 @@
 /* Copyright (c) 2007 by Errata Security, All Rights Reserved
- * Programer(s): Robert David Graham [rdg]
+ * Programmer(s): Robert David Graham [rdg]
  */
 #ifndef __PCAPFILE_H
 #define __PCAPFILE_H
@@ -11,8 +11,12 @@ extern "C" {
 
 struct PcapFile;
 
+enum pcapfile_datalink_t {
+    PCAPFILE_ETHERNET = 1,
+    PCAPFILE_WIFi = 105,
+};
 
-unsigned pcapfile_datalink(struct PcapFile *handle);
+int pcapfile_datalink(struct PcapFile *handle);
 
 void pcapfile_writeframe(
     struct PcapFile *capfile,

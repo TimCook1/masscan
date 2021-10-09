@@ -4,7 +4,7 @@
     (h/t Marsh Ray @marshray for this idea)
 
     This is a randomization/reshuffling function based on a crypto
-    "Feistel network" as describ ed in the paper:
+    "Feistel network" as described in the paper:
 
     'Ciphers with Arbitrary Finite Domains'
         by John Black and Phillip Rogaway
@@ -29,7 +29,7 @@
      9 ->      7
 
     As you can see on the right hand side, the numbers are in random
-    order, and they don't repeaet.
+    order, and they don't repeat.
 
     This is create for port scanning. We can take an index variable
     and increment it during a scan, then use this function to
@@ -305,7 +305,7 @@ blackrock_verify(struct BlackRock *br, uint64_t max)
     /* Allocate a list of 1-byte counters */
     list = CALLOC(1, (size_t)((range<max)?range:max));
     
-    /* For all numbers in the range, verify increment the counter for the
+    /* For all numbers in the range, verify increment the counter for
      * the output. */
     for (i=0; i<range; i++) {
         uint64_t x = blackrock_shuffle(br, i);
@@ -331,18 +331,18 @@ void
 blackrock_benchmark(unsigned rounds)
 {
     struct BlackRock br;
-    uint64_t range = 0x012356789123UL;
+    uint64_t range = 0x012356789123ULL;
     uint64_t i;
     uint64_t result = 0;
     uint64_t start, stop;
-    static const uint64_t ITERATIONS = 5000000UL;
+    static const uint64_t ITERATIONS = 5000000ULL;
 
     printf("-- blackrock-1 -- \n");
     printf("rounds = %u\n", rounds);
     blackrock_init(&br, range, 1, rounds);
 
     /*
-     * Time the the algorithm
+     * Time the algorithm
      */
     start = pixie_nanotime();
     for (i=0; i<ITERATIONS; i++) {
@@ -373,7 +373,6 @@ int
 blackrock_selftest(void)
 {
     uint64_t i;
-    int is_success = 0;
     uint64_t range;
 
     /* @marshray
@@ -385,10 +384,11 @@ blackrock_selftest(void)
      */
     {
         struct BlackRock br;
-        uint64_t result, result2;
+        
         blackrock_init(&br, 1000, 0, 4);
 
         for (i=0; i<10; i++) {
+            uint64_t result, result2;
             result = blackrock_shuffle(&br, i);
             result2 = blackrock_unshuffle(&br, result);
             if (i != result2)
@@ -402,6 +402,7 @@ blackrock_selftest(void)
 
     for (i=0; i<5; i++) {
         struct BlackRock br;
+        int is_success;
 
         range += 10 + i;
         range *= 2;
@@ -409,7 +410,6 @@ blackrock_selftest(void)
         blackrock_init(&br, range, time(0), 4);
 
         is_success = blackrock_verify(&br, range);
-
         if (!is_success) {
             fprintf(stderr, "BLACKROCK: randomization failed\n");
             return 1; /*fail*/

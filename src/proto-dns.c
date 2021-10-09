@@ -14,7 +14,7 @@
 #include "output.h"
 #include "masscan-app.h"
 #include "proto-banner1.h"
-#include "templ-port.h"
+#include "massip-port.h"
 #include "masscan.h"
 #include "unusedparm.h"
 
@@ -26,7 +26,7 @@
 
 /****************************************************************************
  * This skips over a name field while parsing the packet. If the name
- * is just a two-byte compression field likce 0xc0 0x1a, then it'll skip
+ * is just a two-byte compression field like 0xc0 0x1a, then it'll skip
  * those two bytes. However, when it does the skip, it does validate
  * the name. Thus, if it's a compressed name, it'll follow the compression
  * links to validate things like long names and infinite recursion.
@@ -75,7 +75,7 @@ dns_name_skip_validate(const unsigned char *px, unsigned offset, unsigned length
             /* we have a normal label */
             recursion = 0;
 
-            /* If the label-length is zero, then that meaans we've reached
+            /* If the label-length is zero, then that means we've reached
              * the end of the name */
             if (len == 0) {
                 return result; /* end of domain name */
@@ -92,7 +92,7 @@ dns_name_skip_validate(const unsigned char *px, unsigned offset, unsigned length
 /****************************************************************************
  * Just skip the name, without validating whether it's valid or not. This
  * is for re-parsing the packet usually, after we've validated that all
- * the names are ok.
+ * the names are OK.
  ****************************************************************************/
 unsigned
 dns_name_skip(const unsigned char px[], unsigned offset, unsigned max)
@@ -182,7 +182,7 @@ proto_dns_parse(struct DNS_Incoming *dns, const unsigned char px[], unsigned off
 
     dns->req = px;
     dns->req_length = max-offset;
-    dns->edns0.payload_size = 512; /* rfc 1035 4.2.1 */
+    dns->edns0.payload_size = 512; /* RFC 1035 4.2.1 */
 
 
     /*
@@ -356,8 +356,8 @@ handle_dns(struct Output *out, time_t timestamp,
             struct PreprocessedInfo *parsed,
             uint64_t entropy)
 {
-    unsigned ip_them;
-    unsigned ip_me;
+    ipaddress ip_them = parsed->src_ip;
+    ipaddress ip_me = parsed->dst_ip;
     unsigned port_them = parsed->port_src;
     unsigned port_me = parsed->port_dst;
     struct DNS_Incoming dns[1];
@@ -365,10 +365,6 @@ handle_dns(struct Output *out, time_t timestamp,
     uint64_t seqno;
     const char *reason = 0;
 
-    ip_them = parsed->ip_src[0]<<24 | parsed->ip_src[1]<<16
-            | parsed->ip_src[2]<< 8 | parsed->ip_src[3]<<0;
-    ip_me = parsed->ip_dst[0]<<24 | parsed->ip_dst[1]<<16
-            | parsed->ip_dst[2]<< 8 | parsed->ip_dst[3]<<0;
 
     seqno = (unsigned)syn_cookie(ip_them, port_them | Templ_UDP, ip_me, port_me, entropy);
 
@@ -431,12 +427,16 @@ handle_dns(struct Output *out, time_t timestamp,
         unsigned rrlen = px[offset+8]<<8 | px[offset+9];
         unsigned txtlen = px[offset+10];
 
+        offset += 11;
+
+        /* Make sure can't exceed bounds of RR */
+        if (txtlen > length - offset)
+            txtlen = length - offset;
+        
         if (rrlen == 0 || txtlen > rrlen-1)
             return 0;
         if (type != 0x10 || xclass != 3)
             return 0;
-
-        offset += 11;
 
         output_report_banner(
                 out, timestamp,

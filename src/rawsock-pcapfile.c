@@ -1,5 +1,5 @@
 /* Copyright (c) 2007 by Errata Security, All Rights Reserved
- * Programer(s): Robert David Graham [rdg]
+ * Programmer(s): Robert David Graham [rdg]
  */
 /*
 
@@ -145,7 +145,7 @@ struct PcapFile
     char filename[256];
     int byte_order;
     int linktype;
-    int64_t frame_number;
+    long long frame_number;
 
     uint64_t file_size;
     uint64_t bytes_read;
@@ -186,11 +186,11 @@ static unsigned PCAP32(unsigned byte_order, const unsigned char *buf)
 /**
  * Return the "link" type, such as Ethernet, WiFi, Token Ring, etc.
  */
-unsigned
+int
 pcapfile_datalink(struct PcapFile *handle)
 {
     if (handle)
-        return (unsigned)handle->linktype;
+        return handle->linktype;
     else
         return 0;
 }
@@ -248,7 +248,7 @@ smells_like_valid_packet(const unsigned char *px, unsigned length, unsigned byte
     } else
     switch (link_type) {
     case 1: /*ethernet*/
-        if (px[12] == 0x08 && px[13] == 0x00 && px[13] == 0x45)
+        if (px[12] == 0x08 && px[13] == 0x00 && px[14] == 0x45)
             return 1;
     }
 
@@ -312,12 +312,12 @@ int pcapfile_readframe(
         if (*r_time_usecs < 1000100) {
             *r_time_secs += 1;
             *r_time_usecs -= 1000000;
-        } if (*r_time_usecs > 0xFFFFFF00) {
+        } else if (*r_time_usecs > 0xFFFFFF00) {
             *r_time_secs -= 1;
             *r_time_usecs += 1000000;
             *r_time_usecs &= 0xFFFFFFFF; /* mask off in case of 64-bit ints */
         } else
-            is_corrupt = 1; /* shouldn't be more than 1-second, but some capture porgrams erroneously do that */
+            is_corrupt = 1; /* shouldn't be more than 1-second, but some capture programs erroneously do that */
     }
     if (*r_time_usecs == 0
         && *r_time_secs == 0
@@ -352,7 +352,7 @@ int pcapfile_readframe(
          * packet.*/
         position = ftell_x(capfile->fp);
         if (position == -1) {
-            fprintf(stderr, "%s: could not resolve file corruption (ftell) frame #%" PRId64 "\n",
+            fprintf(stderr, "%s:%lld: could not resolve file corruption (ftell)\n",
                 capfile->filename, capfile->frame_number);
             perror(capfile->filename);
             fseek_x(capfile->fp, 0, SEEK_END);
@@ -362,7 +362,7 @@ int pcapfile_readframe(
         /* Print an error message indicating corruption was found. Note
          * that if corruption happens past 4-gigs on a 32-bit system, this
          * will print an inaccurate number */
-        fprintf(stderr, "%s(%" PRIu64 "): corruption found at 0x%08" PRIx64 " (%" PRId64 ")\n",
+        fprintf(stderr, "%s:%lld: corruption found at 0x%08" PRIx64 " (%" PRId64 ")\n",
             capfile->filename,
             capfile->frame_number,
             position,
@@ -394,14 +394,14 @@ int pcapfile_readframe(
             if (!smells_like_valid_packet(tmp+i, (unsigned)(bytes_read-i), byte_order, capfile->linktype))
                 continue;
 
-            /* Woot! We have a non-corrupt packet. Let's now change the
+            /* Woot! We have a non-corrupt packet. Let's now change
              * the current file-pointer to point to that location.
              * Notice that we have to be careful when working with
              * large (>4gig) files on 32-bit systems. The 'fpos_t' is
              * usually a 64-bit value and can be used to set a position,
              * but we cannot manipulate it directory (it's an opaque
-             * structure, not an integer), so we have seek back to the
-             * saved value, fthen seek relatively forward to the
+             * structure, not an integer), so we have to seek back to the
+             * saved value, then seek relatively forward to the
              * known-good spot */
             position = position + i;
             if (fseek_x(capfile->fp, position, SEEK_SET) != 0) {
@@ -413,8 +413,8 @@ int pcapfile_readframe(
 
 #if 0
             /* We could stop here, but we are going to try one more thing.
-             * Most cases of corruption will be because the PREVOUS packet
-             * was truncated, not becausae the CURRENT packet was bad.
+             * Most cases of corruption will be because the PREVIOUS packet
+             * was truncated, not because the CURRENT packet was bad.
              * Since we have seeked forward to find the NEXT packet, we
              * want to now seek backwards and see if there is actually
              * a good CURRENT packet. */
@@ -471,7 +471,7 @@ int pcapfile_readframe(
              * help people figure out where in the file the corruption
              * happened, so they can figure out why it was corrupt.*/
             position = ftell_x(capfile->fp);
-            fprintf(stderr, "%s(%" PRId64 "): good packet found at 0x%08" PRIx64 " (%" PRId64 ")\n",
+            fprintf(stderr, "%s:%lld: good packet found at 0x%08" PRIx64 " (%" PRId64 ")\n",
                 capfile->filename,
                 capfile->frame_number,
                 position,
@@ -494,8 +494,9 @@ int pcapfile_readframe(
     bytes_read = fread(buf, 1, *r_captured_length, capfile->fp);
     if (bytes_read < *r_captured_length) {
         if (bytes_read <= 0) {
-            fprintf(stderr, "%s: could not read packet data, frame #%" PRId64 "\n",
-                capfile->filename, capfile->frame_number);
+            fprintf(stderr, "%s: could not read packet data, frame #%lld\n",
+                capfile->filename,
+                    (long long)capfile->frame_number);
             perror(capfile->filename);
         } else
             fprintf(stderr, "%s: premature end of file\n", capfile->filename);
@@ -562,9 +563,7 @@ struct PcapFile *pcapfile_openread(const char *capfilename)
         if (bytes_read <= 0) {
             fprintf(stderr, "%s: could not read PCAP header\n", capfilename);
             perror(capfilename);
-        } else if (bytes_read == 0)
-            fprintf(stderr, "%s: file empty\n", capfilename);
-        else
+        } else
             fprintf(stderr, "%s: file too short\n", capfilename);
         fclose(fp);
         return 0;
@@ -776,7 +775,7 @@ struct PcapFile *pcapfile_openappend(const char *capfilename, unsigned linktype)
         unsigned minor = PCAP16(byte_order, buf+6);
 
         if (major != 2 || minor != 4)
-            fprintf(stderr, "%s: unknown version %d.%d\n", capfilename, major, minor);
+            fprintf(stderr, "%s: unknown version %u.%u\n", capfilename, major, minor);
     }
 
     /* Protocol */
@@ -793,14 +792,14 @@ struct PcapFile *pcapfile_openappend(const char *capfilename, unsigned linktype)
 
         fclose(fp);
 
-        snprintf(linkspec, sizeof(linkspec), "-linktype%d", linktype);
-        linkspec_length = strlen(linkspec);
+        linkspec_length = snprintf(linkspec, sizeof(linkspec), "-linktype%d", linktype);
 
         if (strstr(capfilename, linkspec) || strlen(capfilename) + linkspec_length + 1 > sizeof(newname)) {
             /* Oops, we have a problem, it looks like the filename already
              * has the previous linktype in its name for some reason. At this
              * unlikely point, we just give up */
-            fprintf(stderr, "Giving up on appending %d-type frames onto a %d-type file\n", linktype, file_linktype);
+            fprintf(stderr, "Giving up on appending %u-type frames onto a %u-type file\n",
+                    linktype, file_linktype);
             return 0;
         }
 
@@ -916,7 +915,7 @@ void pcapfile_writeframe(
     }
 
     if (fwrite(header, 1, 16, capfile->fp) != 16) {
-        fprintf(stderr, "%s: could write packet header, frame #%" PRId64 "\n",
+        fprintf(stderr, "%s:%lld: could not write packet header\n",
             capfile->filename, capfile->frame_number);
         perror(capfile->filename);
         fclose(capfile->fp);
@@ -924,7 +923,7 @@ void pcapfile_writeframe(
     }
 
     if (fwrite(buffer, 1, buffer_size, capfile->fp) != buffer_size) {
-        fprintf(stderr, "%s: could write packet contents, frame #%" PRId64 "\n",
+        fprintf(stderr, "%s:%lld: could not write packet contents\n",
             capfile->filename, capfile->frame_number);
         perror(capfile->filename);
         fclose(capfile->fp);

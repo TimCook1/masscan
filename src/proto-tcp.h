@@ -1,8 +1,9 @@
 #ifndef PROTO_TCP_H
 #define PROTO_TCP_H
-
-#include "packet-queue.h"
+#include "massip-addr.h"
+#include "stack-queue.h"
 #include "output.h"
+#include "util-bool.h"
 
 struct Adapter;
 struct TCP_Control_Block;
@@ -19,7 +20,7 @@ struct lua_State;
 #define TCP_IS_FIN(px,i) ((TCP_FLAGS(px,i) & 0x1) == 0x1)
 
 /**
- * [KLUDGE] The 'tcpcon' module doens't have access to the main configuration,
+ * [KLUDGE] The 'tcpcon' module doesn't have access to the main configuration,
  * so specific configuration options have to be sent to it using this
  * function.
  */
@@ -28,6 +29,21 @@ tcpcon_set_parameter(struct TCP_ConnectionTable *tcpcon,
                         const char *name,
                         size_t value_length,
                         const void *value);
+enum http_field_t {
+    http_field_replace,
+    http_field_add,
+    http_field_remove,
+    http_field_method,
+    http_field_url,
+    http_field_version,
+};
+
+void
+tcpcon_set_http_header(struct TCP_ConnectionTable *tcpcon,
+                        const char *name,
+                        size_t value_length,
+                        const void *value,
+                        enum http_field_t what);
 
 void scripting_init_tcp(struct TCP_ConnectionTable *tcpcon, struct lua_State *L);
 
@@ -37,18 +53,17 @@ void scripting_init_tcp(struct TCP_ConnectionTable *tcpcon, struct lua_State *L)
  *
  * @param entry_count
  *      A hint about the desired initial size. This should be about twice
- *      the number of oustanding connections, so you should base this number
+ *      the number of outstanding connections, so you should base this number
  *      on your transmit rate (the faster the transmit rate, the more
  *      outstanding connections you'll have). This function will automatically
  *      round this number up to the nearest power of 2, or round it down
- *      if it causes malloc() to not be able to allocate enoug memory.
+ *      if it causes malloc() to not be able to allocate enough memory.
  * @param entropy
  *      Seed for syn-cookie randomization
  */
 struct TCP_ConnectionTable *
 tcpcon_create_table(    size_t entry_count,
-                        struct rte_ring *transmit_queue,
-                        struct rte_ring *packet_buffers,
+                        struct stack_t *stack,
                         struct TemplatePacket *pkt_template,
                         OUTPUT_REPORT_BANNER report_banner,
                         struct Output *out,
@@ -58,6 +73,7 @@ tcpcon_create_table(    size_t entry_count,
 
 void tcpcon_set_banner_flags(struct TCP_ConnectionTable *tcpcon,
     unsigned is_capture_cert,
+    unsigned is_capture_servername,
     unsigned is_capture_html,
     unsigned is_capture_heartbleed,
 	unsigned is_capture_ticketbleed);
@@ -87,8 +103,8 @@ enum TCP_What {
     TCP_WHAT_DATA,
 };
 
-void
-tcpcon_handle(struct TCP_ConnectionTable *tcpcon, struct TCP_Control_Block *entry,
+int
+stack_incoming_tcp(struct TCP_ConnectionTable *tcpcon, struct TCP_Control_Block *entry,
     int what, const void *p, size_t length,
     unsigned secs, unsigned usecs,
     unsigned seqno_them);
@@ -98,9 +114,9 @@ tcpcon_handle(struct TCP_ConnectionTable *tcpcon, struct TCP_Control_Block *entr
  * Lookup a connection record based on IP/ports.
  */
 struct TCP_Control_Block *
-tcpcon_lookup_tcb(
+tcb_lookup(
     struct TCP_ConnectionTable *tcpcon,
-    unsigned ip_src, unsigned ip_dst,
+    ipaddress ip_src, ipaddress ip_dst,
     unsigned port_src, unsigned port_dst);
 
 /**
@@ -109,7 +125,7 @@ tcpcon_lookup_tcb(
 struct TCP_Control_Block *
 tcpcon_create_tcb(
     struct TCP_ConnectionTable *tcpcon,
-    unsigned ip_src, unsigned ip_dst,
+    ipaddress ip_src, ipaddress ip_dst,
     unsigned port_src, unsigned port_dst,
     unsigned my_seqno, unsigned their_seqno,
     unsigned ttl);
@@ -120,10 +136,16 @@ tcpcon_create_tcb(
  */
 void
 tcpcon_send_FIN(
-    struct TCP_ConnectionTable *tcpcon,
-    unsigned ip_me, unsigned ip_them,
-    unsigned port_me, unsigned port_them,
-    uint32_t seqno_them, uint32_t ackno_them);
+                struct TCP_ConnectionTable *tcpcon,
+                ipaddress ip_me, ipaddress ip_them,
+                unsigned port_me, unsigned port_them,
+                uint32_t seqno_them, uint32_t ackno_them);
+void
+tcpcon_send_RST(
+                struct TCP_ConnectionTable *tcpcon,
+                ipaddress ip_me, ipaddress ip_them,
+                unsigned port_me, unsigned port_them,
+                uint32_t seqno_them, uint32_t ackno_them);
 
 /**
  * Send a reset packet back, even if we don't have a TCP connection
@@ -132,9 +154,8 @@ tcpcon_send_FIN(
 void
 tcp_send_RST(
     struct TemplatePacket *templ,
-    PACKET_QUEUE *packet_buffers,
-    PACKET_QUEUE *transmit_queue,
-    unsigned ip_them, unsigned ip_me,
+    struct stack_t *stack,
+    ipaddress ip_them, ipaddress ip_me,
     unsigned port_them, unsigned port_me,
     unsigned seqno_them, unsigned seqno_me
 );

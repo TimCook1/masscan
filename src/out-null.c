@@ -16,7 +16,7 @@ null_out_open(struct Output *out, FILE *fp)
 /****************************************************************************
  * This function doesn't really "close" the file. Instead, it's purpose
  * is to print trailing information to the file. This is pretty much only
- * a concern for XML files that need stuff appeneded to the end.
+ * a concern for XML files that need stuff appended to the end.
  ****************************************************************************/
 static void
 null_out_close(struct Output *out, FILE *fp)
@@ -31,7 +31,7 @@ null_out_close(struct Output *out, FILE *fp)
  ****************************************************************************/
 static void
 null_out_status(struct Output *out, FILE *fp, time_t timestamp,
-    int status, unsigned ip, unsigned ip_proto, unsigned port, unsigned reason, unsigned ttl)
+    int status, ipaddress ip, unsigned ip_proto, unsigned port, unsigned reason, unsigned ttl)
 {
     UNUSEDPARM(timestamp);
     UNUSEDPARM(out);
@@ -53,7 +53,7 @@ null_out_status(struct Output *out, FILE *fp, time_t timestamp,
  ****************************************************************************/
 static void
 null_out_banner(struct Output *out, FILE *fp, time_t timestamp,
-        unsigned ip, unsigned ip_proto, unsigned port,
+        ipaddress ip, unsigned ip_proto, unsigned port,
         enum ApplicationProtocol proto, unsigned ttl,
         const unsigned char *px, unsigned length)
 {

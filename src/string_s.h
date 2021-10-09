@@ -55,8 +55,8 @@
 
 const char *strerror_x(int x);
 
-#if defined(_MSC_VER) && (_MSC_VER == 1900)
-/*Visual Studio 2015*/
+#if defined(_MSC_VER) && (_MSC_VER >= 1900)
+/*Visual Studio 2015 and 2017*/
 # include <stdio.h>
 # include <string.h>
 # define strcasecmp     _stricmp
@@ -105,7 +105,7 @@ errno_t gmtime_s(struct tm* _tm, const time_t *time);
 #undef strerror
 
 #else
-# error unknown compiler
+# warning unknown compiler
 #endif
 
 

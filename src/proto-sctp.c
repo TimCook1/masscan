@@ -110,11 +110,11 @@ sctp_checksum(const void *vbuffer, size_t length)
     *  to a polynomial, computed the host-bit-order polynomial
     *  remainder, performed final negation, then did an end-for-end
     *  bit-reversal.
-    *  Note that a 32-bit bit-reversal is identical to four inplace
-    *  8-bit reversals followed by an end-for-end byteswap.
+    *  Note that a 32-bit bit-reversal is identical to four in-place
+    *  8-bit reversals followed by an end-for-end byte swap.
     *  In other words, the bytes of each bit are in the right order,
-    *  but the bytes have been byteswapped.  So we now do an explicit
-    *  byteswap.  On a little-endian machine, this byteswap and
+    *  but the bytes have been byte swapped.  So we now do an explicit
+    *  byte swap.  On a little-endian machine, this byte swap and
     *  the final ntohl cancel out and could be elided.
     */
 
@@ -140,15 +140,12 @@ handle_sctp(struct Output *out, time_t timestamp,
             struct PreprocessedInfo *parsed,
             uint64_t entropy)
 {
-    unsigned ip_them;
+    ipaddress ip_them = parsed->src_ip;
     unsigned port_them = parsed->port_src;
     unsigned verification_tag;
     unsigned offset = parsed->transport_offset;
 
     UNUSEDPARM(entropy);
-
-    ip_them = parsed->ip_src[0]<<24 | parsed->ip_src[1]<<16
-            | parsed->ip_src[2]<< 8 | parsed->ip_src[3]<<0;
 
     verification_tag = px[offset + 4] << 24 | px[offset + 5] << 16 |
                         px[offset + 6] << 8 | px[offset + 7];
@@ -159,7 +156,7 @@ handle_sctp(struct Output *out, time_t timestamp,
         return;
 
     switch (px[offset + 12]) {
-    case 2: /* init ack */
+    case 2: /* init ACK */
         output_report_status(
                         out,
                         timestamp,

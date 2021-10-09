@@ -2,6 +2,7 @@
 #include "pixie-timer.h"
 #include "string_s.h"
 #include "siphash24.h"
+#include <assert.h>
 #include <time.h>
 #include <stdarg.h>
 
@@ -19,6 +20,7 @@ get_entropy(void)
 {
     uint64_t entropy[2] = {0,0};
     unsigned i;
+    int err;
 
     /*
      * Gather some random bits
@@ -30,10 +32,13 @@ get_entropy(void)
         entropy[0] ^= __rdtsc();
 #endif
         time(0);
-        fopen_s(&fp, "/", "r");
+        err = fopen_s(&fp, "/", "r");
         entropy[1] <<= 1;
         entropy[1] |= entropy[0]>>63;
         entropy[0] <<= 1;
+        if (err == 0 && fp) {
+            fclose(fp);
+        }
     }
 
     entropy[0] ^= time(0);
@@ -41,7 +46,6 @@ get_entropy(void)
 #if defined(__linux__)
     {
         FILE *fp;
-        int err;
 
         err = fopen_s(&fp, "/dev/urandom", "r");
         if (err == 0 && fp) {
@@ -111,7 +115,25 @@ murmur(uint64_t entropy, ...)
 /***************************************************************************
  ***************************************************************************/
 uint64_t
-syn_cookie( unsigned ip_them, unsigned port_them,
+syn_cookie( ipaddress ip_them, unsigned port_them,
+            ipaddress ip_me, unsigned port_me,
+            uint64_t entropy)
+{
+    switch (ip_them.version) {
+    case 4:
+        return syn_cookie_ipv4(ip_them.ipv4, port_them, ip_me.ipv4, port_me, entropy);
+    case 6:
+        return syn_cookie_ipv6(ip_them.ipv6, port_them, ip_me.ipv6, port_me, entropy);
+    default:
+        assert(!"unknown ip version");
+        return 0;
+    }
+}
+
+/***************************************************************************
+ ***************************************************************************/
+uint64_t
+syn_cookie_ipv4( unsigned ip_them, unsigned port_them,
             unsigned ip_me, unsigned port_me,
             uint64_t entropy)
 {
@@ -125,5 +147,26 @@ syn_cookie( unsigned ip_them, unsigned port_them,
     data[1] = port_them;
     data[2] = ip_me;
     data[3] = port_me;
+    return siphash24(data, sizeof(data), x);
+}
+
+/***************************************************************************
+ ***************************************************************************/
+uint64_t
+syn_cookie_ipv6( ipv6address ip_them, unsigned port_them,
+            ipv6address ip_me, unsigned port_me,
+            uint64_t entropy)
+{
+    uint64_t data[5];
+    uint64_t x[2];
+
+    x[0] = entropy;
+    x[1] = entropy;
+
+    data[0] = ip_them.hi;
+    data[1] = ip_them.lo;
+    data[2] = ip_me.hi;
+    data[3] = ip_me.lo;
+    data[4] = port_them<<16ULL | port_me;
     return siphash24(data, sizeof(data), x);
 }

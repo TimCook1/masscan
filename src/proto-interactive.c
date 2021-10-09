@@ -4,8 +4,8 @@
 #include <stdlib.h>
 
 /*
- * TODO: we need to track thie memory used for this better than with malloc(), such
- * as usuing a preallocated array of packet buffers. But for now, I'm just using
+ * TODO: we need to track the memory used for this better than with malloc(), such
+ * as using a preallocated array of packet buffers. But for now, I'm just using
  * malloc() 'cause I'm a lazy programmer.
  */
 unsigned char *
@@ -21,6 +21,8 @@ tcp_transmit_alloc(struct InteractiveData *more, size_t length)
 void
 tcp_close(struct InteractiveData *more)
 {
+    if (more == NULL)
+        return;
     more->is_closing = 1;
 }
 

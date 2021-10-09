@@ -1,9 +1,14 @@
+# Try to figure out the default compiler. I dont know the best
+# way to do this with `gmake`. If you have better ideas, please
+# submit a pull request on github.
+ifeq ($(CC),)
 ifneq (, $(shell which clang))
 CC = clang
 else ifneq (, $(shell which gcc))
 CC = gcc
 else
 CC = cc
+endif
 endif
 
 PREFIX ?= /usr
@@ -72,6 +77,13 @@ endif
 
 # FreeBSD
 ifneq (, $(findstring freebsd, $(SYS)))
+LIBS = -lm -lpthread
+INCLUDES = -I.
+FLAGS2 =
+endif
+
+# NetBSD
+ifneq (, $(findstring netbsd, $(SYS)))
 LIBS = -lm -lpthread
 INCLUDES = -I.
 FLAGS2 =
